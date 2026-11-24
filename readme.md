@@ -38,10 +38,10 @@ the same codebase. One backend serves both.
 │                      │    WS   /feed    (MarketSnapshot / tick)    │   (axum 0.7)         │
 └──────────────────────┘                                             │                      │
                                                                      │  Simulator @ 10 Hz   │
-┌──────────────────────┐    GET /ui-config → { ws_url }               │  tokio broadcast     │
-│   Native UI          │  ◀──────────────────────────────────────▶    │                      │
-│   (gpui-pre window)  │    WS   /feed    (MarketSnapshot / tick)     │                      │
-└──────────────────────┘                                              └──────────────────────┘
+┌──────────────────────┐    GET /ui-config → { ws_url }              │  tokio broadcast     │
+│   Native UI          │  ◀──────────────────────────────────────▶   │                      │
+│   (gpui-pre window)  │    WS   /feed    (MarketSnapshot / tick)    │                      │
+└──────────────────────┘                                             └──────────────────────┘
 ```
 
 - One process. The Axum service serves the UI bundle (`dist/` via
