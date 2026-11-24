@@ -21,9 +21,16 @@ thread_local! {
 
 #[wasm_bindgen(start)]
 pub fn start() -> Result<(), JsValue> {
-    console_error_panic_hook::set_once();
-    let _ = console_log::init_with_level(log::Level::Info);
+    // `web_init()` installs the panic hook and gpui-pre-web's ConsoleLogger,
+    // then force-sets `log::set_max_level` to Debug in `cfg!(debug_assertions)`
+    // builds. That flips on cosmic-text's `log::debug!` fallback-resolution
+    // traces — "No default font match for SansSerif at weight 400" and
+    // "Failed to find preset fallback for [] locale 'en-US', used 'IBM Plex
+    // Sans': …" — which fire on every text-layout pass. They're informational
+    // (we only ship one font, and the layout still succeeds via the primary
+    // family), so clamp the level to Info here regardless of build profile.
     gpui_platform::web_init();
+    log::set_max_level(log::LevelFilter::Info);
 
     let app = gpui_platform::single_threaded_web();
     let handle = app.run_embedded(move |cx: &mut App| {
