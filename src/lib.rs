@@ -124,8 +124,6 @@ pub fn run_native() {
     let app = gpui_platform::application();
 
     app.run(move |cx: &mut App| {
-        gpui_base::init(cx);
-
         cx.bind_keys([KeyBinding::new("cmd-q", Quit, None)]);
         cx.on_action(|_: &Quit, cx: &mut App| cx.quit());
         cx.on_window_closed(|cx, _| {
@@ -175,7 +173,6 @@ pub mod wasm {
 
         let app = gpui_platform::single_threaded_web();
         let handle = app.run_embedded(move |cx: &mut App| {
-            gpui_base::init(cx);
             cx.text_system()
                 .add_fonts(vec![Cow::Borrowed(FONT_BYTES)])
                 .expect("failed to load bundled font");

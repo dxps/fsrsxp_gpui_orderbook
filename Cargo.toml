@@ -15,12 +15,11 @@ name = "orderbook"
 path = "src/main.rs"
 
 [dependencies]
-gpui      = { package = "gpui-pre", version = "=0.3.14" }
-gpui-base = "=0.11.0"
-rand      = "0.8"
+gpui     = { package = "gpui-pre", version = "=0.3.14" }
+rand     = "0.8"
 # Portable SystemTime/Instant that uses `Date.now()` on wasm instead of
 # panicking (`time not implemented on this platform` in std for wasm32).
-web-time  = "1"
+web-time = "1"
 
 # Native: real OS window via Metal / Vulkan / DirectX. gpui-pre-platform
 # re-exports `application()` plus every sibling `gpui-pre-<os>` crate.
@@ -45,5 +44,8 @@ getrandom                = { version = "0.2", features = ["js"] }
 opt-level = 1
 
 [profile.release]
-lto = "thin"
+lto = "fat"
 codegen-units = 1
+opt-level = "z"        # favor binary size; relevant for the wasm bundle
+panic = "abort"        # drop unwinding tables (big win on wasm)
+strip = true           # strip symbols from the native binary too

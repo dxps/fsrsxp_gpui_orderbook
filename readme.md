@@ -18,7 +18,6 @@ same codebase.
 | ------------------- | ---------- | ----------------------------------------------------- |
 | `gpui-pre`          | `=0.3.14`  | Zed's GPUI, published to crates.io as a snapshot      |
 | `gpui-pre-platform` | `=0.3.14`  | Native backend (Metal/Vulkan/DX); on wasm re-exports gpui-pre-web |
-| `gpui-base`         | `=0.11.0`  | Widget primitives (pulled transitively by component kits) |
 | `rand`              | `0.8`      | Simulated feed                                        |
 | `web-time`          | `1`        | Portable `SystemTime` (std's panics on wasm32)        |
 
@@ -45,6 +44,22 @@ trunk serve               # http://127.0.0.1:8080
 
 Requires a browser with WebGPU (Chrome 144+, Safari 26+, Firefox 141+).
 `trunk build --release` produces a `dist/` with the `.js`, `.wasm`, and a copy of `index.html`.
+
+#### Web bundle size
+
+| profile                               | raw wasm | gzipped |
+| ------------------------------------- | -------: | ------: |
+| `trunk serve` (dev)                   |    20 MB |       — |
+| `trunk build --release`               |   7.4 MB |  2.5 MB |
+
+Serve `dist/` behind any static host with gzip or brotli enabled. The 2.5 MB
+gz floor is the structural cost of GPUI's own text/graphics stack — wgpu,
+cosmic-text + swash + harfrust + skrifa, taffy, and ICU — because GPUI
+renders everything itself through WebGPU rather than using browser-native
+HTML/canvas text. The release profile here is tuned for size
+(`lto = "fat"`, `opt-level = "z"`, `panic = "abort"`, `strip = true`) and
+`wasm-opt` is deliberately off: on `gpui-pre-web`'s output it needed
+`--enable-bulk-memory-opt` and saved under 20 KB when it did run.
 
 ## Layout
 
