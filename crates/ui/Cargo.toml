@@ -16,8 +16,9 @@ name = "orderbook"
 path = "src/main.rs"
 
 [dependencies]
+# All semvers pinned with `=` for reproducible builds.
 gpui     = { package = "gpui-pre", version = "=0.3.14" }
-web-time = "1"
+web-time = "=1.1.0"
 
 fsrsxp-orderbook-proto = { workspace = true }
 serde                  = { workspace = true }
@@ -30,10 +31,10 @@ gpui_platform = { package = "gpui-pre-platform", version = "=0.3.14", features =
 # Blocking HTTP for the one-shot /ui-config fetch. Default features stripped
 # so we don't pull in the rustls+hyper client stack — a plain localhost GET
 # over http:// doesn't need TLS.
-reqwest     = { version = "0.12", default-features = false, features = ["blocking", "json"] }
+reqwest     = { version = "=0.13.5",  default-features = false, features = ["blocking", "json"] }
 # Sync WebSocket client. Lives on a dedicated OS thread; snapshots cross
 # back to the GPUI thread through `std::sync::mpsc`.
-tungstenite = { version = "0.24", default-features = false, features = ["handshake"] }
+tungstenite = { version = "=0.30.0", default-features = false, features = ["handshake"] }
 
 # WASM: SAME crate, which on wasm targets transitively pulls in gpui-pre-web
 # and exposes `single_threaded_web()` + `web_init()`. The default
@@ -43,15 +44,15 @@ tungstenite = { version = "0.24", default-features = false, features = ["handsha
 # and zed#65289).
 [target.'cfg(target_family = "wasm")'.dependencies]
 gpui_platform            = { package = "gpui-pre-platform", version = "=0.3.14", default-features = false }
-wasm-bindgen             = "=0.2.127"
+wasm-bindgen             = "=0.2.130"
 # Panic hook + ConsoleLogger come from gpui_platform::web_init(); we keep
 # `log` to re-clamp the max level back to Info on debug builds (web_init
 # force-sets it to Debug, which uncovers cosmic-text's font-fallback
 # diagnostic traces).
-log                      = "0.4"
+log                      = "=0.4.35"
 # Browser-side HTTP + WebSocket. `spawn_local` runs the async task on the
 # page's event loop; snapshots cross back to the GPUI entity through a
 # single-threaded Rc<RefCell>.
-gloo-net                 = { version = "0.6", default-features = false, features = ["http", "websocket", "json"] }
-wasm-bindgen-futures     = "0.4"
-futures-util             = { version = "0.3", default-features = false }
+gloo-net                 = { version = "=0.8.0", default-features = false, features = ["http", "websocket", "json"] }
+wasm-bindgen-futures     = "=0.4.80"
+futures-util             = { version = "=0.3.34", default-features = false }

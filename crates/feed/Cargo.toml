@@ -11,9 +11,10 @@ name = "orderbook-feed"
 path = "src/main.rs"
 
 [dependencies]
-axum       = { version = "0.7", features = ["ws"] }
-tokio      = { version = "1",   features = ["rt-multi-thread", "macros", "signal", "net", "time", "sync"] }
-tower-http = { version = "0.5", features = ["cors", "fs", "compression-gzip"] }
+# All semvers pinned with `=` for reproducible builds.
+axum       = { version = "=0.8.9",  features = ["ws"] }
+tokio      = { version = "=1.54.1", features = ["rt-multi-thread", "macros", "signal", "net", "time", "sync"] }
+tower-http = { version = "=0.7.1",  features = ["cors", "fs", "compression-gzip"] }
 
 fsrsxp-orderbook-proto = { workspace = true }
 serde                  = { workspace = true }

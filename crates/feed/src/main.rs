@@ -127,7 +127,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                 let Ok(text) = serde_json::to_string(&snap) else {
                     continue;
                 };
-                if socket.send(Message::Text(text)).await.is_err() {
+                if socket.send(Message::Text(text.into())).await.is_err() {
                     return; // peer disconnected
                 }
             }
