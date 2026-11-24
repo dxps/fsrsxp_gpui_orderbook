@@ -1,0 +1,55 @@
+[package]
+name         = "fsrsxp_gpui_orderbook"
+description  = "GPUI orderbook dashboard. Native + WASM. Consumes a live WebSocket feed."
+version      = { workspace = true }
+edition      = { workspace = true }
+# Uses `async move |…| { … }` async-closure syntax (stabilised in 1.85).
+rust-version = "1.85"
+publish      = { workspace = true }
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+path       = "src/lib.rs"
+
+[[bin]]
+name = "orderbook"
+path = "src/main.rs"
+
+[dependencies]
+gpui     = { package = "gpui-pre", version = "=0.3.14" }
+web-time = "1"
+
+fsrsxp-orderbook-proto = { workspace = true }
+serde                  = { workspace = true }
+serde_json             = { workspace = true }
+
+# Native: real OS window via Metal / Vulkan / DirectX. gpui-pre-platform
+# re-exports `application()` plus every sibling `gpui-pre-<os>` crate.
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.14", features = ["font-kit", "runtime_shaders"] }
+# Blocking HTTP for the one-shot /ui-config fetch. Default features stripped
+# so we don't pull in the rustls+hyper client stack — a plain localhost GET
+# over http:// doesn't need TLS.
+reqwest     = { version = "0.12", default-features = false, features = ["blocking", "json"] }
+# Sync WebSocket client. Lives on a dedicated OS thread; snapshots cross
+# back to the GPUI thread through `std::sync::mpsc`.
+tungstenite = { version = "0.24", default-features = false, features = ["handshake"] }
+
+# WASM: SAME crate, which on wasm targets transitively pulls in gpui-pre-web
+# and exposes `single_threaded_web()` + `web_init()`. The default
+# `multithreaded` feature pulls `wasm_thread`, which uses an unstable
+# `#![feature(stdarch_wasm_atomic_wait)]` and needs nightly, so disable it
+# and stay on single-threaded + stable Rust (tracks longbridge/gpui-kit#3414
+# and zed#65289).
+[target.'cfg(target_family = "wasm")'.dependencies]
+gpui_platform            = { package = "gpui-pre-platform", version = "=0.3.14", default-features = false }
+wasm-bindgen             = "=0.2.127"
+console_error_panic_hook = "0.1"
+console_log              = "1"
+log                      = "0.4"
+# Browser-side HTTP + WebSocket. `spawn_local` runs the async task on the
+# page's event loop; snapshots cross back to the GPUI entity through a
+# single-threaded Rc<RefCell>.
+gloo-net                 = { version = "0.6", default-features = false, features = ["http", "websocket", "json"] }
+wasm-bindgen-futures     = "0.4"
+futures-util             = { version = "0.3", default-features = false }

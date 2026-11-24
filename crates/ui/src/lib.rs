@@ -4,7 +4,12 @@
 //! `run_native` opens an OS window via `gpui-pre-platform` (Metal/Vulkan/
 //! DirectX), and `wasm::start` runs the same tree in a `<canvas>` via
 //! `gpui-pre-web` (WebGPU with a WebGL2 fallback).
+//!
+//! State no longer comes from a local simulator — the Dashboard asks the
+//! backend for its WebSocket URL via `GET /ui-config`, opens that socket,
+//! and applies each `MarketSnapshot` it receives.
 
+pub mod feed;
 pub mod market;
 pub mod views;
 
@@ -16,44 +21,45 @@ use gpui::{
 #[cfg(not(target_family = "wasm"))]
 use gpui::{px, size, KeyBinding, Task, WindowBounds};
 
+use crate::feed::{ConnStatus, FeedClient};
 use crate::market::Market;
 use crate::views::{header, orderbook_panel, status_bar, trades_panel, BG_PAGE};
 
 actions!(orderbook, [Quit]);
 
-/// Frames between simulated market ticks on the web path. At the compositor's
-/// ~60 fps this yields ~10 updates per second — the same cadence the native
-/// path gets from its background timer.
-#[cfg(target_family = "wasm")]
-const FRAMES_PER_TICK: u32 = 6;
-
 pub struct Dashboard {
-    market: Market,
+    market:       Market,
+    feed:         FeedClient,
+    status:       ConnStatus,
     render_count: u64,
-    // Native drives updates from a background timer that keeps firing even if
-    // the OS throttles redraws on an unfocused window. Web's single-threaded
-    // executor can't do that without colliding with the main-thread paint
-    // borrow (RefCell panic), so there we tick from inside render() using an
-    // animation-frame loop.
+    // Native drives the render loop from a background timer that keeps firing
+    // even if the OS throttles redraws on an unfocused window. Web's
+    // single-threaded executor can't do that without colliding with the
+    // main-thread paint borrow (RefCell panic), so there we repaint from
+    // `window.request_animation_frame()` inside render() itself.
     #[cfg(not(target_family = "wasm"))]
-    _tick_task: Option<Task<()>>,
-    #[cfg(target_family = "wasm")]
-    frames_since_tick: u32,
+    _tick_task:   Option<Task<()>>,
 }
 
 impl Dashboard {
     pub fn new(_cx: &mut Context<Self>) -> Self {
+        let config_url = resolve_config_url();
+        let feed = FeedClient::connect(config_url);
+
         #[cfg(not(target_family = "wasm"))]
         let mut this = Self {
-            market: Market::new(),
+            market: Market::default(),
+            feed,
+            status: ConnStatus::Connecting,
             render_count: 0,
             _tick_task: None,
         };
         #[cfg(target_family = "wasm")]
         let this = Self {
-            market: Market::new(),
+            market: Market::default(),
+            feed,
+            status: ConnStatus::Connecting,
             render_count: 0,
-            frames_since_tick: 0,
         };
 
         #[cfg(not(target_family = "wasm"))]
@@ -62,12 +68,17 @@ impl Dashboard {
             let weak = _cx.entity().downgrade();
             this._tick_task = Some(_cx.spawn(async move |_, cx| {
                 loop {
+                    // 50 ms ≈ 20 fps — twice the feed's 10 Hz cadence, so a
+                    // snapshot is at most one poll stale.
                     cx.background_executor()
-                        .timer(Duration::from_millis(100))
+                        .timer(Duration::from_millis(50))
                         .await;
                     if weak
                         .update(cx, |this, cx| {
-                            this.market.tick();
+                            if let Some(snap) = this.feed.try_latest() {
+                                this.market = snap;
+                            }
+                            this.status = this.feed.status();
                             cx.notify();
                         })
                         .is_err()
@@ -88,11 +99,10 @@ impl Render for Dashboard {
 
         #[cfg(target_family = "wasm")]
         {
-            self.frames_since_tick = self.frames_since_tick.wrapping_add(1);
-            if self.frames_since_tick >= FRAMES_PER_TICK {
-                self.market.tick();
-                self.frames_since_tick = 0;
+            if let Some(snap) = self.feed.try_latest() {
+                self.market = snap;
             }
+            self.status = self.feed.status();
             _window.request_animation_frame();
         }
 
@@ -113,7 +123,27 @@ impl Render for Dashboard {
                     .child(orderbook_panel(&self.market))
                     .child(trades_panel(&self.market)),
             )
-            .child(status_bar(&self.market, self.render_count))
+            .child(status_bar(&self.market, self.status, self.render_count))
+    }
+}
+
+/// Where to fetch `UiConfig` from.
+///
+/// Web: same-origin — Trunk's dev server proxies `/ui-config` and `/feed` to
+/// the backend (see `Trunk.toml`), so a static-hosted bundle "just works"
+/// when its host is also configured to proxy.
+///
+/// Native: `OB_BACKEND_URL` env var (default `http://127.0.0.1:7878`).
+fn resolve_config_url() -> String {
+    #[cfg(target_family = "wasm")]
+    {
+        "/ui-config".to_string()
+    }
+    #[cfg(not(target_family = "wasm"))]
+    {
+        let base = std::env::var("OB_BACKEND_URL")
+            .unwrap_or_else(|_| "http://127.0.0.1:7878".into());
+        format!("{}/ui-config", base.trim_end_matches('/'))
     }
 }
 
@@ -157,7 +187,7 @@ pub mod wasm {
 
     // The web backend ships no fonts; without an explicit bundle the first
     // text layout panics and the canvas stays blank. One Regular weight is
-    // enough — gpui-base uses system-ui as the alias target, satisfied by any
+    // enough — GPUI uses system-ui as the alias target, satisfied by any
     // font registered under the `ui-sans-serif` family group.
     const FONT_BYTES: &[u8] = include_bytes!("../assets/IBMPlexSans-Regular.ttf");
 

@@ -1,0 +1,21 @@
+[package]
+name         = "fsrsxp-orderbook-feed"
+description  = "Axum-based orderbook feed service — serves /ui-config + /feed (WS)."
+version      = { workspace = true }
+edition      = { workspace = true }
+rust-version = { workspace = true }
+publish      = { workspace = true }
+
+[[bin]]
+name = "orderbook-feed"
+path = "src/main.rs"
+
+[dependencies]
+axum       = { version = "0.7", features = ["ws"] }
+tokio      = { version = "1",   features = ["rt-multi-thread", "macros", "signal", "net", "time", "sync"] }
+tower-http = { version = "0.5", features = ["cors"] }
+
+fsrsxp-orderbook-proto = { workspace = true }
+serde                  = { workspace = true }
+serde_json             = { workspace = true }
+rand                   = { workspace = true }

@@ -2,7 +2,8 @@
 //! of a `Market` snapshot — the Dashboard owns the mutable state and re-renders
 //! the whole tree each tick. GPUI diffs the paint tree, so this is cheap.
 
-use crate::market::{format_price, format_size, format_time_ms, Market, Side};
+use crate::feed::ConnStatus;
+use crate::market::{format_price, format_size, format_time_ms, Market, MarketExt, Side};
 use gpui::{
     canvas, div, point, px, rgb, FontWeight, Hsla, IntoElement, ParentElement, PathBuilder,
     SharedString, Styled,
@@ -56,7 +57,7 @@ pub fn header(market: &Market) -> impl IntoElement {
                     div()
                         .text_color(rgb(TEXT_PRIMARY))
                         .font_weight(FontWeight::BOLD)
-                        .child(SharedString::from(market.symbol)),
+                        .child(SharedString::from(market.symbol.clone())),
                 ),
         )
         .child(stat_block(
@@ -459,12 +460,17 @@ fn trades_header_row() -> impl IntoElement {
 
 // ─────────────────────────── status bar ────────────────────────────────
 
-pub fn status_bar(market: &Market, render_count: u64) -> impl IntoElement {
+pub fn status_bar(market: &Market, status: ConnStatus, render_count: u64) -> impl IntoElement {
+    let (label, dot_color) = match status {
+        ConnStatus::Connecting => ("CONNECTING", TEXT_MUTED),
+        ConnStatus::Connected => ("LIVE", BID_GREEN),
+        ConnStatus::Disconnected => ("OFFLINE", ASK_RED),
+    };
     let dot = div()
         .w(px(6.))
         .h(px(6.))
         .rounded_full()
-        .bg(rgb(BID_GREEN));
+        .bg(rgb(dot_color));
 
     div()
         .flex()
@@ -484,11 +490,11 @@ pub fn status_bar(market: &Market, render_count: u64) -> impl IntoElement {
                 .items_center()
                 .gap_2()
                 .child(dot)
-                .child(SharedString::from("SIM"))
+                .child(SharedString::from(label))
                 .child(format!(
                     "· {} ticks · {} prints · frame {}",
                     market.ticks, market.trade_count, render_count
                 )),
         )
-        .child(SharedString::from("Zed GPUI · gpui-pre 0.3.14"))
+        .child(SharedString::from("Zed GPUI · gpui-pre 0.3.14 · axum feed"))
 }

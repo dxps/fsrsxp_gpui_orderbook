@@ -1,0 +1,13 @@
+[package]
+name         = "fsrsxp-orderbook-proto"
+description  = "Shared wire types for the fsrsxp_gpui_orderbook feed service and UI."
+version      = { workspace = true }
+edition      = { workspace = true }
+rust-version = { workspace = true }
+publish      = { workspace = true }
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+serde = { workspace = true }
