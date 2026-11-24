@@ -133,6 +133,56 @@ feed process just serves whatever's currently in `dist/`.
 `trunk build --release` produces a size-tuned `dist/` (see table below)
 with `.js`, `.wasm` and a copy of `index.html`.
 
+### Development loop
+
+Three windows, each doing one job. A change to either side rebuilds only what
+depends on it; the feed already serves `dist/` and re-reads it per request, so
+a browser reload is enough for UI changes.
+
+**Terminal 1 — feed, auto-restarting on back-end changes:**
+
+```bash
+cargo install cargo-watch    # once
+```
+
+```bash
+cargo watch -w crates/feed -w crates/proto -x 'run -p fsrsxp-orderbook-feed'
+```
+
+Without `cargo-watch`, run `cargo run -p fsrsxp-orderbook-feed` and
+restart it by hand after every back-end edit.
+
+**Terminal 2 — UI wasm, rebuilt on every save:**
+
+```bash
+cd crates/ui && trunk watch
+```
+
+Writes to `crates/ui/dist/` on every edit under `crates/ui/src/`, `index.html`
+or `assets/`. The feed picks up the new files automatically — nothing to
+restart on that side.
+
+**Browser — reload after `✅ success`:**
+
+No hot reload; hit Cmd+R / Ctrl+R once trunk prints `✅ success` to pick up
+the new wasm bundle. The feed client doesn't auto-reconnect either, so a feed
+restart also needs a reload — the status bar will sit on `OFFLINE` in the
+meantime. The UI re-fetches `/ui-config` and reopens the WS on page load, so
+pointing it at a different backend is just `OB_PUBLIC_WS_URL=… cargo watch …`
++ browser reload.
+
+**What triggers what:**
+
+| you edited                                  | feed restart | wasm rebuild | browser reload |
+| ------------------------------------------- | :----------: | :----------: | :------------: |
+| `crates/feed/**`                            |      ✓       |              |       ✓        |
+| `crates/ui/src/**` / `index.html`           |              |      ✓       |       ✓        |
+| `crates/proto/**` (wire format)             |      ✓       |      ✓       |       ✓        |
+
+For native UI dev there's no browser step — rerun `cargo run --release`
+yourself, or wrap it: `cargo watch -w crates/ui -w crates/proto -x 'run --release'`.
+Run it in a separate terminal from the feed's watcher.
+
 ### Production deployment
 
 **Single process** (the default). Point `OB_UI_DIST` at the shipped `dist/`
