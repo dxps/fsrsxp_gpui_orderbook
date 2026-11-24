@@ -8,9 +8,24 @@ recent prints, and a status bar showing the live connection state.
 **UI runs as a native macOS/Linux/Windows window AND in the browser** from
 the same codebase. One backend serves both.
 
-| native                                     | web (WebGPU in a `<canvas>`)                  |
-| ------------------------------------------ | --------------------------------------------- |
-| ![native](docs/screenshot.png)             | ![web](docs/screenshot-web.jpg)               |
+<table>
+  <colgroup>
+    <col width="50%">
+    <col width="50%">
+  </colgroup>
+  <thead>
+    <tr>
+      <th align="center">native</th>
+      <th align="center">web (WebGPU in a <code>&lt;canvas&gt;</code>)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td align="center"><img src="docs/screenshot.png" alt="native"></td>
+      <td align="center"><img src="docs/screenshot-web.jpg" alt="web"></td>
+    </tr>
+  </tbody>
+</table>
 
 <br/>
 
@@ -19,11 +34,11 @@ the same codebase. One backend serves both.
 ```
 ┌──────────────────────┐    GET /          → index.html + wasm       ┌──────────────────────┐
 │    Web UI (WASM,     │    GET /ui-config → { ws_url }              │                      │
-│    WebGPU canvas)    │  ◀──────────────────────────────────────▶    │   orderbook-feed     │
-│                      │    WS   /feed    (MarketSnapshot / tick)     │   (axum 0.7)         │
-└──────────────────────┘                                              │                      │
-                                                                      │  Simulator @ 10 Hz   │
-┌──────────────────────┐    GET /ui-config → { ws_url }              │  tokio broadcast     │
+│    WebGPU canvas)    │  ◀──────────────────────────────────────▶   │   orderbook-feed     │
+│                      │    WS   /feed    (MarketSnapshot / tick)    │   (axum 0.7)         │
+└──────────────────────┘                                             │                      │
+                                                                     │  Simulator @ 10 Hz   │
+┌──────────────────────┐    GET /ui-config → { ws_url }               │  tokio broadcast     │
 │   Native UI          │  ◀──────────────────────────────────────▶    │                      │
 │   (gpui-pre window)  │    WS   /feed    (MarketSnapshot / tick)     │                      │
 └──────────────────────┘                                              └──────────────────────┘
