@@ -1,4 +1,4 @@
-// Native launcher. For the WASM entry see `src/lib.rs`'s `wasm` module.
+// Native launcher. For the WASM entry see `src/wasm.rs`.
 
 #[cfg(not(target_family = "wasm"))]
 fn main() {
