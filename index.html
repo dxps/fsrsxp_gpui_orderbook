@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Orderbook · GPUI</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background: #0a0e1a;
+        color: #e8ecf1;
+        font-family:
+          "IBM Plex Sans",
+          ui-sans-serif,
+          system-ui,
+          sans-serif;
+      }
+      body {
+        height: 100vh;
+        width: 100vw;
+      }
+      #loading {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #7c8599;
+        font-size: 13px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+    </style>
+    <link data-trunk rel="rust" data-target-name="fsrsxp_gpui_orderbook" data-wasm-opt="z" />
+  </head>
+  <body>
+    <div id="loading">booting GPUI runtime…</div>
+    <script type="module">
+      // The wasm module's #[wasm_bindgen(start)] mounts GPUI's canvas; hide
+      // the pre-boot placeholder once the first paint has happened.
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          const el = document.getElementById("loading");
+          if (el) el.remove();
+        }),
+      );
+    </script>
+  </body>
+</html>

@@ -4,7 +4,8 @@
 
 use crate::market::{format_price, format_size, format_time_ms, Market, Side};
 use gpui::{
-    div, px, rgb, FontWeight, IntoElement, ParentElement, SharedString, Styled,
+    canvas, div, point, px, rgb, FontWeight, Hsla, IntoElement, ParentElement, PathBuilder,
+    SharedString, Styled,
 };
 
 // ─────────────────────────── palette ──────────────────────────────────
@@ -29,11 +30,6 @@ pub const ACCENT: u32 = 0xFFB400;
 // ─────────────────────────── header ───────────────────────────────────
 
 pub fn header(market: &Market) -> impl IntoElement {
-    let change = market.change_pct();
-    let up = change >= 0.0;
-    let change_color = if up { BID_GREEN } else { ASK_RED };
-    let arrow: SharedString = if up { "▲".into() } else { "▼".into() };
-
     let dot = div()
         .w(px(8.))
         .h(px(8.))
@@ -68,11 +64,7 @@ pub fn header(market: &Market) -> impl IntoElement {
             format_price(market.last_price),
             TEXT_PRIMARY,
         ))
-        .child(stat_block(
-            "24H",
-            format!("{} {:+.2}%", arrow, change),
-            change_color,
-        ))
+        .child(change_block(market.change_pct()))
         .child(stat_block(
             "BID",
             format_price(market.best_bid().unwrap_or(0.0)),
@@ -114,6 +106,71 @@ fn stat_block(label: &'static str, value: impl Into<SharedString>, value_color: 
                 .text_color(rgb(value_color))
                 .child(value.into()),
         )
+}
+
+/// 24-hour change stat with a vector up/down triangle. Drawn through
+/// `PathBuilder::fill()` so it doesn't rely on any glyph being present in the
+/// current font — the web bundle only carries IBM Plex Sans Regular, which
+/// skips the Geometric Shapes block (▲/▼).
+fn change_block(change: f64) -> impl IntoElement {
+    let up = change >= 0.0;
+    let color_u32 = if up { BID_GREEN } else { ASK_RED };
+    let color: Hsla = rgb(color_u32).into();
+
+    div()
+        .flex()
+        .flex_col()
+        .gap_0p5()
+        .min_w(px(96.))
+        .child(
+            div()
+                .text_xs()
+                .text_color(rgb(TEXT_DIM))
+                .child(SharedString::from("24H")),
+        )
+        .child(
+            div()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap_1()
+                .child(triangle(up, color))
+                .child(
+                    div()
+                        .text_sm()
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_color(color)
+                        .child(format!("{:.2}%", change.abs())),
+                ),
+        )
+}
+
+/// Small filled triangle (▲/▼ equivalent) painted as a vector path.
+fn triangle(up: bool, color: Hsla) -> impl IntoElement {
+    canvas(
+        |_, _, _| {},
+        move |bounds, _, window, _| {
+            let center = bounds.center();
+            let (half_w, half_h) = (px(4.0), px(3.5));
+            let mut path = PathBuilder::fill();
+            if up {
+                path.move_to(point(center.x, center.y - half_h));
+                path.line_to(point(center.x + half_w, center.y + half_h));
+                path.line_to(point(center.x - half_w, center.y + half_h));
+            } else {
+                path.move_to(point(center.x - half_w, center.y - half_h));
+                path.line_to(point(center.x + half_w, center.y - half_h));
+                path.line_to(point(center.x, center.y + half_h));
+            }
+            path.close();
+            if let Ok(path) = path.build() {
+                window.paint_path(path, color);
+            }
+        },
+    )
+    .w(px(10.))
+    .h(px(10.))
+    .flex_none()
 }
 
 // ─────────────────────────── orderbook panel ───────────────────────────

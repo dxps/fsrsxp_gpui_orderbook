@@ -3,18 +3,43 @@ name = "fsrsxp_gpui_orderbook"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.80"
-description = "Trading orderbook dashboard built on GPUI (Zed's UI framework, gpui-pre snapshot)."
+description = "Trading orderbook dashboard built on GPUI. Native + WASM."
 publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+path = "src/lib.rs"
 
 [[bin]]
 name = "orderbook"
 path = "src/main.rs"
 
 [dependencies]
-gpui          = { package = "gpui-pre",          version = "=0.3.14" }
+gpui      = { package = "gpui-pre", version = "=0.3.14" }
+gpui-base = "=0.11.0"
+rand      = "0.8"
+# Portable SystemTime/Instant that uses `Date.now()` on wasm instead of
+# panicking (`time not implemented on this platform` in std for wasm32).
+web-time  = "1"
+
+# Native: real OS window via Metal / Vulkan / DirectX. gpui-pre-platform
+# re-exports `application()` plus every sibling `gpui-pre-<os>` crate.
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
 gpui_platform = { package = "gpui-pre-platform", version = "=0.3.14", features = ["font-kit", "runtime_shaders"] }
-gpui-base     = "=0.11.0"
-rand          = "0.8"
+
+# WASM: SAME crate, which on wasm targets transitively pulls in gpui-pre-web
+# and exposes `single_threaded_web()` + `web_init()`. The default
+# `multithreaded` feature pulls `wasm_thread`, which uses an unstable
+# `#![feature(stdarch_wasm_atomic_wait)]` and needs nightly, so disable it and
+# stay on single-threaded + stable Rust (tracks longbridge/gpui-kit#3414
+# and zed#65289).
+[target.'cfg(target_family = "wasm")'.dependencies]
+gpui_platform            = { package = "gpui-pre-platform", version = "=0.3.14", default-features = false }
+wasm-bindgen             = "=0.2.127"
+console_error_panic_hook = "0.1"
+console_log              = "1"
+log                      = "0.4"
+getrandom                = { version = "0.2", features = ["js"] }
 
 [profile.dev]
 opt-level = 1
