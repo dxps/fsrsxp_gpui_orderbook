@@ -29,7 +29,7 @@ use axum::{
 use fsrsxp_orderbook_proto::{MarketSnapshot, UiConfig};
 use std::{net::SocketAddr, path::Path, time::Duration};
 use tokio::sync::broadcast;
-use tower_http::{cors::CorsLayer, services::ServeDir};
+use tower_http::{compression::CompressionLayer, cors::CorsLayer, services::ServeDir};
 
 mod sim;
 
@@ -93,6 +93,11 @@ async fn main() {
         .route("/ui-config", get(ui_config))
         .route("/feed", get(feed_ws))
         .fallback_service(ServeDir::new(&ui_dist))
+        // gzip responses the client says it accepts. Big win on the wasm
+        // bundle (release: 7.4 MB → ~2.5 MB) and essentially free on the
+        // tiny /ui-config + per-tick JSON. Skipped automatically for
+        // already-binary content types (fonts, images) and WS upgrades.
+        .layer(CompressionLayer::new().gzip(true))
         // Permissive CORS is a safety net for anyone running the UI off a
         // different origin (another dev server, a packaged desktop shell).
         // Harmless when the UI is served from this same process.
