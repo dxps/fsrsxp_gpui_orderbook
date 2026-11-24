@@ -9,20 +9,16 @@ recent prints, and a status bar showing the live connection state.
 the same codebase. One backend serves both.
 
 <table>
-  <colgroup>
-    <col width="50%">
-    <col width="50%">
-  </colgroup>
   <thead>
     <tr>
-      <th align="center">native</th>
-      <th align="center">web (WebGPU in a <code>&lt;canvas&gt;</code>)</th>
+      <th width="50%" align="center">native</th>
+      <th width="50%" align="center">web (WebGPU in a <code>&lt;canvas&gt;</code>)</th>
     </tr>
   </thead>
   <tbody>
     <tr>
-      <td align="center"><img src="docs/screenshot.png" alt="native"></td>
-      <td align="center"><img src="docs/screenshot-web.jpg" alt="web"></td>
+      <td width="50%" align="center"><img src="docs/screenshot.png" alt="native" width="100%"></td>
+      <td width="50%" align="center"><img src="docs/screenshot-web.jpg" alt="web" width="100%"></td>
     </tr>
   </tbody>
 </table>
