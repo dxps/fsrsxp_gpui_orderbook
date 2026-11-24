@@ -12,18 +12,20 @@ the same codebase. One backend serves both.
 | ------------------------------------------ | --------------------------------------------- |
 | ![native](docs/screenshot.png)             | ![web](docs/screenshot-web.jpg)               |
 
+<br/>
+
 ## Architecture
 
 ```
-┌──────────────────────┐    GET /         → index.html + wasm        ┌──────────────────────┐
+┌──────────────────────┐    GET /          → index.html + wasm       ┌──────────────────────┐
 │    Web UI (WASM,     │    GET /ui-config → { ws_url }              │                      │
-│    WebGPU canvas)    │  ◀──────────────────────────────────────▶   │   orderbook-feed     │
-│                      │    WS   /feed    (MarketSnapshot / tick)    │   (axum 0.7)         │
+│    WebGPU canvas)    │  ◀──────────────────────────────────────▶    │   orderbook-feed     │
+│                      │    WS   /feed    (MarketSnapshot / tick)     │   (axum 0.7)         │
 └──────────────────────┘                                              │                      │
                                                                       │  Simulator @ 10 Hz   │
 ┌──────────────────────┐    GET /ui-config → { ws_url }              │  tokio broadcast     │
-│   Native UI          │  ◀──────────────────────────────────────▶   │                      │
-│   (gpui-pre window)  │    WS   /feed    (MarketSnapshot / tick)    │                      │
+│   Native UI          │  ◀──────────────────────────────────────▶    │                      │
+│   (gpui-pre window)  │    WS   /feed    (MarketSnapshot / tick)     │                      │
 └──────────────────────┘                                              └──────────────────────┘
 ```
 
@@ -41,6 +43,8 @@ the same codebase. One backend serves both.
   connected WebSocket.
 - Wire format is the `fsrsxp-orderbook-proto` crate (plain serde structs),
   shared between the two binaries via a Cargo workspace.
+
+<br/>
 
 ## Workspace
 
@@ -68,6 +72,8 @@ the same codebase. One backend serves both.
         └── Trunk.toml         # just a `trunk build` config; the feed serves dist/
 ```
 
+<br/>
+
 ## Stack
 
 | crate               | version    | role                                                   |
@@ -76,7 +82,7 @@ the same codebase. One backend serves both.
 | `gpui-pre-platform` | `=0.3.14`  | Native backend (Metal/Vulkan/DX); on wasm re-exports `gpui-pre-web` |
 | `axum`              | `0.7`      | HTTP + WebSocket server                                |
 | `tokio`             | `1`        | Async runtime for the feed service                     |
-| `tower-http`        | `0.5`      | Permissive CORS for the dev server                     |
+| `tower-http`        | `0.5`      | `ServeDir` for the UI bundle, permissive CORS as a safety net |
 | `reqwest`           | `0.12`     | Blocking `GET /ui-config` on native (TLS features off) |
 | `tungstenite`       | `0.24`     | Sync WebSocket client on native                        |
 | `gloo-net`          | `0.6`      | HTTP + WebSocket client on wasm                        |
@@ -86,6 +92,8 @@ the same codebase. One backend serves both.
 The UI pins still match what [`longbridge/gpui-component`](https://github.com/longbridge/gpui-component)
 uses in its own workspace, so a later move to the heavier `gpui-component`
 widget set (DataTable, Dock, Tiles) requires no dependency surgery.
+
+<br/>
 
 ## Run
 
@@ -110,14 +118,20 @@ hits `http://127.0.0.1:7878/ui-config` by default — override with
 OB_BACKEND_URL=http://feed.internal:7878 cargo run --release
 ```
 
+<br/>
+
 ### Web UI
 
 ```bash
-cargo install trunk                    # once
-cd crates/ui && trunk build            # (or `trunk build --release`)
-cd ../.. && cargo run -p fsrsxp-orderbook-feed
+cargo install trunk                       # run once
+trunk build -C crates/ui                  # (or add --release)
+cargo run -p fsrsxp-orderbook-feed
 # open http://127.0.0.1:7878
 ```
+
+Both `trunk` and `cargo` commands run from the repo root — `-C crates/ui`
+points trunk at that crate's `Trunk.toml`, which still writes to
+`crates/ui/dist/`.
 
 Requires a browser with WebGPU (Chrome 144+, Safari 26+, Firefox 141+).
 
@@ -126,41 +140,40 @@ The feed service serves `crates/ui/dist/` at `/` through
 wasm bundle, `/ui-config` and the `/feed` WebSocket all from the same
 origin. No reverse proxy, no CORS.
 
-For a tighter dev loop, run `trunk watch` in `crates/ui/` — Trunk rebuilds
-`dist/` on every file save; reload the browser to pick up the change. The
-feed process just serves whatever's currently in `dist/`.
-
 `trunk build --release` produces a size-tuned `dist/` (see table below)
-with `.js`, `.wasm` and a copy of `index.html`.
+with `.js`, `.wasm` and a copy of `index.html`. For a tighter inner
+loop (watcher + feed), see **Development loop** below.
+
+<br/>
 
 ### Development loop
 
-Three windows, each doing one job. A change to either side rebuilds only what
+Three sides, each doing one job. A change to either side rebuilds only what
 depends on it; the feed already serves `dist/` and re-reads it per request, so
 a browser reload is enough for UI changes.
 
 **Terminal 1 — feed, auto-restarting on back-end changes:**
 
-```bash
-cargo install cargo-watch    # once
-```
+First, make sure you have `cargo-watch` installed. If not, run `cargo install cargo-watch` to install it.
+
+Start the back-end service using `./run_dev_svc.sh` or use:
 
 ```bash
 cargo watch -w crates/feed -w crates/proto -x 'run -p fsrsxp-orderbook-feed'
 ```
 
-Without `cargo-watch`, run `cargo run -p fsrsxp-orderbook-feed` and
+Without `cargo-watch`, you would run `cargo run -p fsrsxp-orderbook-feed` and
 restart it by hand after every back-end edit.
 
 **Terminal 2 — UI wasm, rebuilt on every save:**
 
+Start the UI build, watch, and rebuild on changes using `./run_dev_ui.sh` or use:
 ```bash
-cd crates/ui && trunk watch
+trunk watch -C crates/ui
 ```
 
-Writes to `crates/ui/dist/` on every edit under `crates/ui/src/`, `index.html`
-or `assets/`. The feed picks up the new files automatically — nothing to
-restart on that side.
+It writes to `crates/ui/dist/` on every edit under `crates/ui/src/`, `index.html`
+or `assets/`. The feed picks up the new files automatically — nothing to restart on that side.
 
 **Browser — reload after `✅ success`:**
 
@@ -183,14 +196,15 @@ For native UI dev there's no browser step — rerun `cargo run --release`
 yourself, or wrap it: `cargo watch -w crates/ui -w crates/proto -x 'run --release'`.
 Run it in a separate terminal from the feed's watcher.
 
+<br/>
+
 ### Production deployment
 
 **Single process** (the default). Point `OB_UI_DIST` at the shipped `dist/`
 and run the feed binary. One process, one port, same-origin everything:
 
 ```bash
-OB_UI_DIST=/srv/orderbook/dist \
-  ./orderbook-feed
+OB_UI_DIST=/srv/orderbook/dist ./orderbook-feed
 # http://your-host:7878
 ```
 
@@ -215,6 +229,8 @@ WebSocket — to the feed process; `/ui-config` returns the `wss://` URL you
 set, so the HTTPS page gets a socket on a matching scheme (an HTTPS page
 refuses `ws://` as mixed content).
 
+<br/>
+
 ### Web bundle size
 
 | profile                               | raw wasm | gzipped |
@@ -232,6 +248,8 @@ browser-native HTML/canvas text. The release profile is tuned for size
 `wasm-opt` is deliberately off: on `gpui-pre-web`'s output it needed
 `--enable-bulk-memory-opt` and saved under 20 KB when it did run.
 
+<br/>
+
 ## Update strategy
 
 The `Dashboard` view owns a `Market` (the latest `MarketSnapshot`), a
@@ -248,6 +266,8 @@ borrow of `App` — a `RefCell` panic every tick (tracks zed#65289 and
 longbridge/gpui-kit#3414). The render-loop pattern avoids the borrow entirely
 because the poll runs inside `Render::render`, already scoped to a `Context`.
 
+<br/>
+
 ## Feed-client transports
 
 | target  | HTTP (one-shot `/ui-config`) | WebSocket (`/feed`)   | runs on                           |
@@ -258,6 +278,10 @@ because the poll runs inside `Render::render`, already scoped to a `Context`.
 No tokio in the UI binary — the dedicated-thread + sync-client design keeps
 the native build small and avoids the async-runtime-inside-async-runtime
 problem GPUI's executor would otherwise hit.
+
+<br/>
+
+## Notes
 
 ### Why not the other GPUI variants?
 
@@ -279,7 +303,7 @@ The brief asked for a Web UI with a choice of five GPUI variants. In late
 - **`pierreaubert/gpui-toolkit`** — advertises working WASM demos, but
   vendors its own GPUI version that conflicts with other sources.
 
-## Colors / layout
+### Colors / layout
 
 | region | color      |
 | ------ | ---------- |
