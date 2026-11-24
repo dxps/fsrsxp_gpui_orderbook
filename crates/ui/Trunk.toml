@@ -1,18 +1,12 @@
+# Trunk is only used to BUILD the wasm bundle into `dist/`; the Axum feed
+# service (crates/feed) then serves `dist/` alongside /ui-config and /feed,
+# so the whole app is one origin and there's no dev-time proxy.
+#
+# Build:  trunk build            (dev)
+#         trunk build --release  (shipped bundle)
+# Watch:  trunk watch            (rebuild on file save; reload the browser)
+
 [build]
 target  = "index.html"
 dist    = "dist"
 release = false
-
-[serve]
-addresses = ["127.0.0.1"]
-port      = 8080
-open      = false
-
-# Forward /ui-config to the Axum backend on 127.0.0.1:7878. The WebSocket
-# URL that /ui-config returns is absolute (ws://127.0.0.1:7878/feed), so the
-# browser opens WS directly on 7878 — cross-origin, which is fine for
-# WebSockets. No /feed proxy needed. Start the feed service before
-# `trunk serve`.
-[[proxy]]
-backend = "http://127.0.0.1:7878/ui-config"
-rewrite = "/ui-config"

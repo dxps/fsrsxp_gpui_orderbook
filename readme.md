@@ -15,18 +15,27 @@ the same codebase. One backend serves both.
 ## Architecture
 
 ```
-┌──────────────────────┐      HTTP   GET /ui-config → { ws_url }      ┌──────────────────────┐
-│        UI            │  ───────────────────────────────────────▶    │   orderbook-feed     │
-│  (gpui-pre, native   │                                              │   (axum 0.7)         │
-│   or WebGPU in a     │  ◀─────────────────────────────────────────  │                      │
-│   browser canvas)    │      WebSocket  /feed  (MarketSnapshot /     │  Simulator @ 10 Hz   │
-│                      │                  tick, JSON-encoded)         │  tokio broadcast     │
+┌──────────────────────┐    GET /         → index.html + wasm        ┌──────────────────────┐
+│    Web UI (WASM,     │    GET /ui-config → { ws_url }              │                      │
+│    WebGPU canvas)    │  ◀──────────────────────────────────────▶   │   orderbook-feed     │
+│                      │    WS   /feed    (MarketSnapshot / tick)    │   (axum 0.7)         │
+└──────────────────────┘                                              │                      │
+                                                                      │  Simulator @ 10 Hz   │
+┌──────────────────────┐    GET /ui-config → { ws_url }              │  tokio broadcast     │
+│   Native UI          │  ◀──────────────────────────────────────▶   │                      │
+│   (gpui-pre window)  │    WS   /feed    (MarketSnapshot / tick)    │                      │
 └──────────────────────┘                                              └──────────────────────┘
 ```
 
+- One process. The Axum service serves the UI bundle (`dist/` via
+  `tower_http::services::ServeDir`) alongside `/ui-config` and `/feed`, so
+  the whole app is one origin — no reverse proxy, no CORS, no cross-origin
+  WebSocket.
 - UI fetches `/ui-config` at init time to discover the WebSocket URL, so the
   same static bundle can point at dev, staging or prod backends without a
-  rebuild.
+  rebuild. The only URL baked into either UI target is where to find
+  `/ui-config`; everything else, including the WS URL and scheme, comes from
+  the response.
 - Backend keeps one simulator running regardless of client count — a
   `tokio::sync::broadcast` channel fans the same snapshot out to every
   connected WebSocket.
@@ -56,7 +65,7 @@ the same codebase. One backend serves both.
         │       └── web.rs     # gloo-net via wasm_bindgen_futures::spawn_local
         ├── assets/IBMPlexSans-Regular.ttf
         ├── index.html
-        └── Trunk.toml         # dev-server proxy for /ui-config + /feed
+        └── Trunk.toml         # just a `trunk build` config; the feed serves dist/
 ```
 
 ## Stack
@@ -80,85 +89,91 @@ widget set (DataTable, Dock, Tiles) requires no dependency surgery.
 
 ## Run
 
-### 1. Start the feed service
+### Native UI
 
 ```bash
+# terminal 1 — the data source
 cargo run -p fsrsxp-orderbook-feed
 ```
 
-Listens on `http://127.0.0.1:7878`. Exposes `GET /ui-config` and `GET /feed`
-(WebSocket upgrade). One simulator per process; add a client, it starts
-receiving snapshots at the next tick.
-
-### 2a. Native UI
-
 ```bash
+# terminal 2 — the window
 cargo run --release
 ```
 
-Default target is `crates/ui`, so no `-p` needed. Opens a 1280×1000 window
-centred on the display; `Cmd+Q` quits. The UI connects to
-`http://127.0.0.1:7878` by default — override with `OB_BACKEND_URL`:
+Default workspace member is `crates/ui`, so the second command needs no `-p`.
+Opens a 1280×1000 window centred on the display; `Cmd+Q` quits. The native UI
+hits `http://127.0.0.1:7878/ui-config` by default — override with
+`OB_BACKEND_URL`:
 
 ```bash
 OB_BACKEND_URL=http://feed.internal:7878 cargo run --release
 ```
 
-### 2b. Web UI
+### Web UI
 
 ```bash
-cargo install trunk       # once
-cd crates/ui
-trunk serve               # http://127.0.0.1:8080
+cargo install trunk                    # once
+cd crates/ui && trunk build            # (or `trunk build --release`)
+cd ../.. && cargo run -p fsrsxp-orderbook-feed
+# open http://127.0.0.1:7878
 ```
 
 Requires a browser with WebGPU (Chrome 144+, Safari 26+, Firefox 141+).
-Trunk's dev server proxies `/ui-config` and `/feed` to the backend on
-`127.0.0.1:7878` (see `crates/ui/Trunk.toml`), so the browser treats
-everything as same-origin.
 
-`trunk build --release` produces a `dist/` with `.js`, `.wasm` and a copy
-of `index.html`.
+The feed service serves `crates/ui/dist/` at `/` through
+`tower_http::services::ServeDir`, so the browser loads `index.html`, the
+wasm bundle, `/ui-config` and the `/feed` WebSocket all from the same
+origin. No reverse proxy, no CORS.
+
+For a tighter dev loop, run `trunk watch` in `crates/ui/` — Trunk rebuilds
+`dist/` on every file save; reload the browser to pick up the change. The
+feed process just serves whatever's currently in `dist/`.
+
+`trunk build --release` produces a size-tuned `dist/` (see table below)
+with `.js`, `.wasm` and a copy of `index.html`.
 
 ### Production deployment
 
-Two shapes, pick one:
-
-**Reverse proxy** — any static host (nginx, Caddy, S3 + CloudFront, Cloudflare
-Pages) serves `dist/`, and `/ui-config` + `/feed` get proxied to the axum
-service. Set `OB_PUBLIC_WS_URL` on the feed process so `/ui-config` hands the
-browser the public URL — and `wss://` instead of `ws://`, otherwise an HTTPS
-page refuses the socket as mixed content:
+**Single process** (the default). Point `OB_UI_DIST` at the shipped `dist/`
+and run the feed binary. One process, one port, same-origin everything:
 
 ```bash
+OB_UI_DIST=/srv/orderbook/dist \
+  ./orderbook-feed
+# http://your-host:7878
+```
+
+Put nginx, Caddy or your load balancer in front for TLS termination — only
+if you want the browser on `https://`, which also means the WS has to be
+`wss://`, and that means telling the UI about it:
+
+```bash
+OB_UI_DIST=/srv/orderbook/dist \
 OB_PUBLIC_WS_URL=wss://orderbook.example.com/feed \
   ./orderbook-feed
 ```
 
 ```caddyfile
 orderbook.example.com {
-    root * /var/www/orderbook
-    file_server
-
-    reverse_proxy /ui-config  orderbook-feed.internal:7878
-    reverse_proxy /feed       orderbook-feed.internal:7878
+    reverse_proxy orderbook-feed.internal:7878
 }
 ```
 
-**Single process** — bolt `tower_http::services::ServeDir` onto the axum
-router so one binary serves `dist/` at `/` alongside `/ui-config` and `/feed`.
-Same-origin, no reverse proxy, no CORS, one thing to deploy — good for a demo
-box. Scaling the feed independently of the static assets later means splitting
-them back out.
+Caddy forwards everything — HTML, wasm, `/ui-config`, and the `/feed`
+WebSocket — to the feed process; `/ui-config` returns the `wss://` URL you
+set, so the HTTPS page gets a socket on a matching scheme (an HTTPS page
+refuses `ws://` as mixed content).
 
 ### Web bundle size
 
 | profile                               | raw wasm | gzipped |
 | ------------------------------------- | -------: | ------: |
-| `trunk serve` (dev)                   |    20 MB |       — |
+| `trunk build` (dev)                   |    20 MB |       — |
 | `trunk build --release`               |   7.4 MB |  2.5 MB |
 
-Serve `dist/` behind any static host with gzip or brotli enabled. The
+The feed service doesn't compress responses itself; put Caddy/nginx in front
+for gzip or brotli if you're shipping the release bundle over a slow link. The
 2.5 MB gz floor is the structural cost of GPUI's own text/graphics stack —
 wgpu, cosmic-text + swash + harfrust + skrifa, taffy, and ICU — because
 GPUI renders everything itself through WebGPU rather than using

@@ -7,12 +7,15 @@
 //!
 //! Endpoints
 //! ---------
-//! `GET /ui-config` — returns `{ "ws_url": "ws://<Host>/feed" }`, using the
-//! incoming `Host` header so the same binary works whether the UI hits it
-//! directly (127.0.0.1:7878) or through Trunk's dev proxy (127.0.0.1:8080).
-//!
-//! `GET /feed` — WebSocket upgrade; server pushes one JSON-encoded
-//! `MarketSnapshot` per tick.
+//! `GET  /ui-config` — returns `{ "ws_url": "ws://<bind-addr>/feed" }` by
+//!                     default. Override with `OB_PUBLIC_WS_URL` for
+//!                     reverse-proxied production deployments (use `wss://`
+//!                     from an HTTPS page).
+//! `GET  /feed`      — WebSocket upgrade; server pushes one JSON-encoded
+//!                     `MarketSnapshot` per tick.
+//! `GET  /…`         — static files from the UI dist directory
+//!                     (default `crates/ui/dist`, override with `OB_UI_DIST`).
+//!                     Build it with `cd crates/ui && trunk build[ --release]`.
 
 use axum::{
     extract::{
@@ -24,14 +27,15 @@ use axum::{
     Router,
 };
 use fsrsxp_orderbook_proto::{MarketSnapshot, UiConfig};
-use std::{net::SocketAddr, time::Duration};
+use std::{net::SocketAddr, path::Path, time::Duration};
 use tokio::sync::broadcast;
-use tower_http::cors::CorsLayer;
+use tower_http::{cors::CorsLayer, services::ServeDir};
 
 mod sim;
 
 const BIND_ADDR: &str = "127.0.0.1:7878";
 const TICK_PERIOD: Duration = Duration::from_millis(100);
+const DEFAULT_UI_DIST: &str = "crates/ui/dist";
 /// Enough buffer that a slow client can fall behind a few ticks before the
 /// broadcast channel starts dropping messages on it.
 const BROADCAST_BUFFER: usize = 32;
@@ -64,28 +68,38 @@ async fn main() {
 
     // WebSocket URL the service hands to the UI via /ui-config.
     //
-    // Default is derived from the backend's own bind address, which means the
-    // browser connects WS directly to the backend — cross-origin from Trunk's
-    // dev server, which is fine (WebSockets don't require CORS for the
-    // handshake). Set OB_PUBLIC_WS_URL to point at a reverse-proxied URL in
-    // production.
-    //
-    // Trusting the incoming Host header is tempting but misleading: Trunk's
-    // dev-server proxy rewrites it to `127.0.0.1` (no port), which gives the
-    // browser a URL it can't connect to.
+    // Default is derived from the backend's own bind address, which is also
+    // the origin the UI was served from — so same-origin, no CORS, nothing
+    // to configure. Set OB_PUBLIC_WS_URL behind a TLS-terminating reverse
+    // proxy so the browser gets wss:// + the public host (an HTTPS page
+    // refuses a ws:// socket as mixed content).
     let ws_url = std::env::var("OB_PUBLIC_WS_URL")
         .unwrap_or_else(|_| format!("ws://{addr}/feed"));
+
+    // UI dist directory — same binary serves the static bundle and the API,
+    // so the whole app is one origin. ServeDir handles anything that isn't a
+    // more specific route (`/` → index.html, `/orderbook.js`, `/*.wasm`, …).
+    let ui_dist = std::env::var("OB_UI_DIST").unwrap_or_else(|_| DEFAULT_UI_DIST.to_string());
+    if !Path::new(&ui_dist).is_dir() {
+        eprintln!(
+            "warn: UI dist `{ui_dist}` not found — /ui-config and /feed still \
+             work, but `/` returns 404 until you run `cd crates/ui && trunk build` \
+             (add --release for a shipped bundle)."
+        );
+    }
 
     let state = AppState { tx, ws_url };
     let app = Router::new()
         .route("/ui-config", get(ui_config))
         .route("/feed", get(feed_ws))
-        // CORS permissive because the Trunk dev server runs on a different
-        // port in development. Lock this down behind a real deployment.
+        .fallback_service(ServeDir::new(&ui_dist))
+        // Permissive CORS is a safety net for anyone running the UI off a
+        // different origin (another dev server, a packaged desktop shell).
+        // Harmless when the UI is served from this same process.
         .layer(CorsLayer::permissive())
         .with_state(state);
 
-    println!("orderbook-feed listening on http://{addr}  (ws /feed)");
+    println!("orderbook-feed listening on http://{addr}  (ws /feed, UI from {ui_dist})");
     let listener = tokio::net::TcpListener::bind(addr).await.expect("bind");
     axum::serve(listener, app).await.expect("serve");
 }
